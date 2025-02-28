@@ -1,0 +1,4 @@
+loguru==0.7.3
+numpy==2.2.3
+setuptools==75.8.2
+sounddevice==0.5.1
