@@ -1,0 +1,77 @@
+@import "https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css";
+
+/* Increase the size of checkboxes and radios */
+/*input[type="checkbox"],*/
+/*input[type="radio"] {*/
+/*  width: 1.5em;*/
+/*  height: 1.5em;*/
+/*  transform: scale(1.5); !* or whatever scale looks good on mobile *!*/
+/*  margin-right: 0.5rem;*/
+/*}*/
+
+.tag-toggle input[type="checkbox"] {
+  display: none;
+}
+
+/* Base style for the toggle "button" element */
+.tag-toggle .tag-button {
+  display: inline-block;
+  margin-right: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fafafa; /* Light background */
+  color: #363636;           /* Bulma's default text color */
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+/* Hover effect (optional) */
+.tag-toggle .tag-button:hover {
+  background-color: #f0f0f0;
+}
+
+/* When the checkbox is checked, style the adjacent .tag-button as "active" */
+.tag-toggle input[type="checkbox"]:checked + .tag-button {
+  background-color: #48c774; /* Bulma's "is-success" green */
+  border-color: #48c774;
+  color: #fff;
+}
+
+
+/* Hide the original radio input */
+.radio-toggle input[type="radio"] {
+  display: none;
+}
+
+/* Base style for the "button" element */
+.radio-toggle .radio-button {
+  display: inline-block;
+  padding: 0.75rem 1.25rem;
+  margin-right: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fafafa; /* neutral background */
+  color: #363636;           /* Bulma's default text color */
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+/* Optional hover effect */
+.radio-toggle .radio-button:hover {
+  background-color: #f0f0f0;
+}
+
+/* GOOD style when checked */
+.radio-toggle input[type="radio"]:checked + .radio-button.accept {
+  background-color: #48c774; /* Bulma "is-success" green */
+  border-color: #48c774;
+  color: #fff;
+}
+
+/* BAD style when checked */
+.radio-toggle input[type="radio"]:checked + .radio-button.reject {
+  background-color: #f14668; /* Bulma "is-danger" red */
+  border-color: #f14668;
+  color: #fff;
+}
