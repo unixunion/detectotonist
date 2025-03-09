@@ -15,6 +15,12 @@ from loguru import logger
 INPUT_DIR = os.path.join("data", "input")
 
 
+# adapt per platform
+sd.default.device = 1
+sd.default.latency = 'high'
+sd.default.dtype = 'int16'
+sd.default.samplerate = 16000
+
 class AudioClassifierApp:
     def __init__(self):
         """Initialize audio parameters and recording variables"""
@@ -56,6 +62,8 @@ class AudioClassifierApp:
         self.save_image(audio_sample, filename=filename)
 
     def save_mel_spectrogram(self, audio_sample, filename=None):
+        #audio_sample = np.array(audio_sample, dtype=np.float32)
+
         S = librosa.feature.melspectrogram(y=np.array(audio_sample), sr=self.SAMPLE_RATE)
         S_db = librosa.power_to_db(S, ref=np.max)
         plt.figure(figsize=(10, 4))

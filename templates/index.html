@@ -48,6 +48,15 @@
                 </figure>
               </div>
 
+              <!-- Add an audio player for the user to listen to the WAV file -->
+              <div class="card-content">
+                <p><strong>Audio Preview:</strong></p>
+                <audio controls>
+                  <source src="{{ url_for('serve_file', filename=audiofile) }}" type="audio/wav">
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+
               <div class="card-content">
                 <!-- Classification Form -->
                 <form action="{{ url_for('do_classify') }}" method="POST">

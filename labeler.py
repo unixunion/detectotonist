@@ -44,7 +44,9 @@ def index():
     if not files:
         return "<h1 style='margin: 20px;'>No files left to classify!</h1>"
 
-    return render_template("index.html", filename=files[0], tags=AVAILABLE_TAGS)
+    audio_file, _ = os.path.splitext(files[0])
+
+    return render_template("index.html", filename=files[0], tags=AVAILABLE_TAGS, audiofile=f"{audio_file}.wav")
 
 
 @app.route("/classify", methods=["POST"])
@@ -81,4 +83,4 @@ def do_classify():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8080)
+    app.run(debug=True, port=8080, host='0.0.0.0')
