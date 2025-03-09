@@ -13,19 +13,21 @@ import sounddevice as sd
 from loguru import logger
 
 INPUT_DIR = os.path.join("data", "input")
+MAX_RECORDING_TIME = 2
 
+logger.info(sd.query_devices())
 
-# adapt per platform
 sd.default.device = 1
 sd.default.latency = 'high'
-sd.default.dtype = 'int16'
-sd.default.samplerate = 16000
+sd.default.dtype = 'float32'
+sd.default.samplerate = 48000
+
 
 class AudioClassifierApp:
     def __init__(self):
         """Initialize audio parameters and recording variables"""
         # Configuration
-        self.SAMPLE_RATE = 44100  # Hz
+        self.SAMPLE_RATE = 48000  # Hz
         self.BUFFER_DURATION = 2  # Seconds
         self.NOISE_THRESHOLD = 0.1  # Initial noise threshold
         self.SILENCE_THRESHOLD = 0.02  # Silence level
@@ -51,19 +53,24 @@ class AudioClassifierApp:
         self.calibrated_noise_threshold = self.NOISE_THRESHOLD
         self.calibrated_silence_threshold = self.SILENCE_THRESHOLD
         self.calibration_data = []
+        self.recording_start_time = None
 
         # Register signal handler for clean exit
         signal.signal(signal.SIGINT, self.exit_handler)
 
     def process_audio(self, audio_sample):
         """Handle the recorded sample (e.g., save or analyze)"""
-        logger.info(f"Captured {len(audio_sample)} samples.")
-        filename = hashlib.sha1(f"{audio_sample}".encode(encoding="UTF-8")).digest().hex()
-        self.save_image(audio_sample, filename=filename)
+        try:
+            logger.info(f"Captured {len(audio_sample)} samples.")
+            filename = hashlib.sha1(f"{audio_sample}".encode(encoding="UTF-8")).digest().hex()
+            self.save_image(audio_sample, filename=filename)
+        except Exception as e:
+            logger.warning(f"error: {e}")
+            pass
 
     def save_mel_spectrogram(self, audio_sample, filename=None):
-        #audio_sample = np.array(audio_sample, dtype=np.float32)
-
+        audio_sample = np.array(audio_sample, dtype=np.float32)
+        #audio_sample = np.array(audio_sample, dtype=np.float32) / np.iinfo(np.int16).max
         S = librosa.feature.melspectrogram(y=np.array(audio_sample), sr=self.SAMPLE_RATE)
         S_db = librosa.power_to_db(S, ref=np.max)
         plt.figure(figsize=(10, 4))
@@ -144,6 +151,7 @@ class AudioClassifierApp:
             self.calibration_start_time = round(time.time() * 1000)
             self.calibrating = True
             self.calibration_data = []  # Reset calibration accumulation
+            self.recording_start_time = time.time()
             logger.info("Starting calibration")
 
         if not self.calibrated and self.calibrating:
@@ -172,6 +180,15 @@ class AudioClassifierApp:
         if self.recording:
             self.captured_audio.extend(audio_data)
 
+            if self.recording_start_time and time.time() - self.recording_start_time >= MAX_RECORDING_TIME:
+                logger.info("Max recording time reached, stopping capture...")
+                self.recording = False
+                self.process_audio(self.captured_audio)
+                self.captured_audio = []
+                self.silence_start_time = None
+                self.recording_start_time = None
+                return
+
             frame_amplitude = np.mean(np.abs(audio_data))
             self.rolling_silence_buffer.append(frame_amplitude)
 
@@ -193,7 +210,7 @@ class AudioClassifierApp:
                 # **Only reset if consistently above threshold for multiple frames**
                 if len(self.rolling_silence_buffer) == self.ROLLING_WINDOW and np.mean(
                         self.rolling_silence_buffer) > self.calibrated_silence_threshold:
-                    logger.info("Resetting silence start time due to sustained noise")
+                    logger.debug("Resetting silence start time due to sustained noise")
                     self.silence_start_time = None  # Reset silence timer
 
     def run(self):

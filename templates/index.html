@@ -3,76 +3,195 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Bulma CSS CDN (remove if you bundle Bulma yourself in /static/styles.css) -->
   <link href="/static/styles.css" rel="stylesheet">
-  <!-- Optional: your own custom overrides -->
   <link href="{{ url_for('static', filename='styles.css') }}" rel="stylesheet">
-  <title>Detektonist</title>
+  <title>Detectonist</title>
+  <script>
+    function refreshPage() {
+      setTimeout(function () {
+        location.reload();
+      }, 5000);
+    }
+  </script>
+
+  <script>
+    function openTab(evt, tabName) {
+        var i, tabcontent, tablinks;
+
+        tabcontent = document.getElementsByClassName("tabcontent");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+        }
+
+        tablinks = document.getElementsByClassName("tab-link");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].classList.remove("is-active");
+        }
+
+        document.getElementById(tabName).style.display = "block";
+        evt.currentTarget.classList.add("is-active");
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        document.getElementsByClassName("tab-link")[0].click(); // Open first tab by default
+    });
+
+    let recognition;
+
+    function startVoiceRecognition() {
+        if (!('webkitSpeechRecognition' in window)) {
+            alert("Voice recognition only works in Safari on iOS.");
+            return;
+        }
+
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = true;  // Keep listening indefinitely
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = function(event) {
+            let transcript = event.results[event.results.length - 1][0].transcript.toLowerCase();
+            console.log("Recognized:", transcript);
+
+            if (transcript.includes("accept")) {
+                document.getElementById("capture-accept").checked = true;
+                document.getElementById("capture-form").submit();
+            } else if (transcript.includes("reject")) {
+                document.getElementById("capture-reject").checked = true;
+                document.getElementById("capture-form").submit();
+            } else {
+                console.log("Command not recognized:", transcript);
+            }
+        };
+
+        recognition.onerror = function(event) {
+            console.error("Speech recognition error:", event);
+            recognition.stop();
+            setTimeout(startVoiceRecognition, 1000); // Restart after a delay if stopped
+        };
+
+        recognition.onend = function() {
+            console.log("Speech recognition ended, restarting...");
+            setTimeout(startVoiceRecognition, 1000); // Restart after a delay
+        };
+
+        recognition.start();
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        startVoiceRecognition();  // Automatically start listening when the page loads
+    });
+
+  </script>
+
 </head>
 <body>
-  <!-- Hero section -->
   <section class="hero is-info is-fullheight">
-    <!-- Hero head (optional) -->
-<!--    <div class="hero-head">-->
-<!--      <nav class="navbar is-info" role="navigation" aria-label="main navigation">-->
-<!--        <div class="navbar-brand">-->
-<!--          <h1 class="navbar-item" href="#">-->
-<!--            <strong>Detektonist</strong>-->
-<!--          </h1>-->
-<!--        </div>-->
-<!--      </nav>-->
-<!--    </div>-->
+    <div class="hero-head">
+      <nav class="tabs is-boxed is-fullwidth">
+        <div class="container">
+          <ul>
+            <li class="{{ 'is-active' if active_tab == 'capture' else '' }}">
+              <a href="{{ url_for('capture') }}">Capture</a>
+            </li>
+            <li class="{{ 'is-active' if active_tab == 'classify' else '' }}">
+              <a href="{{ url_for('classify') }}">Classify</a>
+            </li>
+            <li class="{{ 'is-active' if active_tab == 'system' else '' }}">
+              <a href="{{ url_for('system') }}">System</a>
+            </li>
+          </ul>
+        </div>
+      </nav>
+    </div>
 
-    <!-- Hero body -->
     <div class="hero-body">
       <div class="container">
-        <div class="columns is-centered">
-          <div class="column is-6">
-            <!-- Card to hold the classification form -->
-            <div class="card">
-              <header class="card-header">
-                <p class="card-header-title">
-                  Classify Object Spectrogram
-                </p>
-              </header>
+        {% if active_tab == "capture" %}
+          {% if capture_files %}
 
-              <!-- Display the current image -->
+            <div class="card">
               <div class="card-image" style="text-align: center; padding: 1rem;">
                 <figure class="image is-256x256" style="margin: 0 auto;">
-                  <!-- Use a smaller figure if your image is large; adjust as needed -->
-                  <img
-                    src="{{ url_for('serve_file', filename='/' ~ filename) }}"
-                    alt="File to classify"
-                    style="max-height: 256px; object-fit: contain;"
-                  >
+                  <img src="{{ url_for('serve_input_file', filename=filename) }}" alt="Spectrogram" style="max-height: 256px;">
                 </figure>
               </div>
 
-              <!-- Add an audio player for the user to listen to the WAV file -->
               <div class="card-content">
                 <p><strong>Audio Preview:</strong></p>
                 <audio controls>
-                  <source src="{{ url_for('serve_file', filename=audiofile) }}" type="audio/wav">
+                  <source src="{{ url_for('serve_input_file', filename=audiofile) }}" type="audio/wav">
                   Your browser does not support the audio element.
                 </audio>
               </div>
 
               <div class="card-content">
-                <!-- Classification Form -->
-                <form action="{{ url_for('do_classify') }}" method="POST">
-                  <!-- Keep track of which file we are classifying -->
+                <form action="{{ url_for('do_filter') }}" method="POST" id="capture-form">
                   <input type="hidden" name="filename" value="{{ filename }}">
-
                   <div class="field is-grouped">
-                    <!-- GOOD radio -->
+                    <div class="control">
+                      <label class="radio-toggle">
+                        <input type="radio" name="status" value="accept" id="capture-accept">
+                        <span class="radio-button accept">Accept</span>
+                      </label>
+                    </div>
+                    <div class="control">
+                      <label class="radio-toggle">
+                        <input type="radio" name="status" value="reject" id="capture-reject">
+                        <span class="radio-button reject">Reject</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <div class="control">
+                      <button class="button is-primary is-fullwidth" type="submit">Filter</button>
+                    </div>
+                  </div>
+                </form>
+                 <!-- Voice Command Button -->
+                  <div class="field">
+                    <div class="control">
+                      <button class="button is-info is-fullwidth" onclick="startVoiceRecognition()">
+                        🎤 Use Voice Command (Accept / Reject)
+                      </button>
+                    </div>
+                  </div>
+              </div>
+
+            </div>
+          {% else %}
+            <h2>No files available for Capture</h2>
+            <script>refreshPage();</script>
+          {% endif %}
+
+        {% elif active_tab == "classify" %}
+          {% if classify_files %}
+            <div class="card">
+              <div class="card-image" style="text-align: center; padding: 1rem;">
+                <figure class="image is-256x256" style="margin: 0 auto;">
+                  <img src="{{ url_for('serve_classify_file', filename=filename) }}" alt="Spectrogram" style="max-height: 256px;">
+                </figure>
+              </div>
+
+              <div class="card-content">
+                <p><strong>Audio Preview:</strong></p>
+                <audio controls>
+                  <source src="{{ url_for('serve_classify_file', filename=audiofile) }}" type="audio/wav">
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+
+              <div class="card-content">
+                <form action="{{ url_for('do_classify') }}" method="POST">
+                  <input type="hidden" name="filename" value="{{ filename }}">
+                  <div class="field is-grouped">
                     <div class="control">
                       <label class="radio-toggle">
                         <input type="radio" name="status" value="accept">
                         <span class="radio-button accept">Accept</span>
                       </label>
                     </div>
-
-                    <!-- BAD radio -->
                     <div class="control">
                       <label class="radio-toggle">
                         <input type="radio" name="status" value="reject">
@@ -92,33 +211,27 @@
                     {% endfor %}
                   </div>
 
-                  <!-- Submit Button -->
                   <div class="field">
                     <div class="control">
-                      <button class="button is-primary is-fullwidth" type="submit">
-                        Classify
-                      </button>
+                      <button class="button is-primary is-fullwidth" type="submit">Classify</button>
                     </div>
                   </div>
                 </form>
-              </div> <!-- end card-content -->
-            </div> <!-- end card -->
-          </div> <!-- end column -->
-        </div> <!-- end columns -->
-      </div> <!-- end container -->
-    </div> <!-- end hero-body -->
+              </div>
+            </div>
+          {% else %}
+            <h2>No files available for Classification</h2>
+            <script>refreshPage();</script>
+          {% endif %}
 
-    <!-- Hero foot (optional) -->
-    <div class="hero-foot">
-      <nav class="tabs is-fullwidth is-info">
-        <div class="container">
-          <ul>
-            <li><a href="#">Home</a></li>
-            <li><a href="#">History</a></li>
-            <li><a href="#">Settings</a></li>
-          </ul>
-        </div>
-      </nav>
+        {% elif active_tab == "system" %}
+          <h2 class="title">System</h2>
+          <p>Manage system settings and shutdown.</p>
+          <form action="/shutdown" method="post">
+            <button class="button is-danger is-large">Shutdown System</button>
+          </form>
+        {% endif %}
+      </div>
     </div>
   </section>
 </body>
