@@ -1,14 +1,4 @@
 @import "/static/bulma.min.css";
-/*@import "https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css";*/
-
-/* Increase the size of checkboxes and radios */
-/*input[type="checkbox"],*/
-/*input[type="radio"] {*/
-/*  width: 1.5em;*/
-/*  height: 1.5em;*/
-/*  transform: scale(1.5); !* or whatever scale looks good on mobile *!*/
-/*  margin-right: 0.5rem;*/
-/*}*/
 
 .tag-toggle input[type="checkbox"] {
   display: none;

@@ -1,17 +1,19 @@
 import os.path
+import os.path
+import pickle
 import shutil
-from loguru import logger
-from flask import Flask, render_template, request, redirect, url_for, send_file
-import time
 import subprocess
+import time
+
+from flask import Flask, render_template, request, send_file, jsonify
+from loguru import logger
 
 from sampler import INPUT_DIR
 
+UNCLASSIFIED_DIR = os.path.join("data", "unclassified")
+SAMPLES_DIR = os.path.join("data", "samples")
 
-READY_FOR_CLASSIFICATION_DIR = os.path.join("data", "samples")
-READY_FOR_TRAINING_DIR = os.path.join("data", "train")
-
-AVAILABLE_TAGS = [
+DEFAULT_TAGS = [
     # Object Types
     "coin",
     "ring",
@@ -32,20 +34,102 @@ AVAILABLE_TAGS = [
     "utensil",
     "noise",
 ]
+
+AVAILABLE_TAGS = DEFAULT_TAGS
+TAGS_FILE = "tags.pkl"
+
+try:
+    with open(TAGS_FILE, 'rb') as f:
+        AVAILABLE_TAGS = pickle.load(f)
+except Exception as e:
+    with open(TAGS_FILE, 'wb') as f:
+        pickle.dump(AVAILABLE_TAGS, f)
+
 app = Flask(__name__)
+
+
+@app.route("/tags", methods=["GET"])
+def get_tags():
+    return jsonify({"status": "ok", "tags": AVAILABLE_TAGS})
+
+@app.route("/tags/add/<tag>", methods=["POST"])
+def add_tag(tag):
+    if tag in AVAILABLE_TAGS:
+        AVAILABLE_TAGS.remove(tag)
+    AVAILABLE_TAGS.append(tag)
+    with open(TAGS_FILE, 'wb') as f:
+        pickle.dump(AVAILABLE_TAGS, f)
+    return jsonify({"status": "ok", "tags": AVAILABLE_TAGS})
+
+
+@app.route("/tags/del/<tag>", methods=["POST"])
+def del_tag(tag):
+    if tag in AVAILABLE_TAGS:
+        AVAILABLE_TAGS.remove(tag)
+        with open("tags.pkl", 'wb') as f:
+            pickle.dump(AVAILABLE_TAGS, f)
+    return jsonify({"status": "ok", "tags": AVAILABLE_TAGS})
+
+
+@app.route("/next_filter_file")
+def next_filter_file():
+    """Return the next file available for filtering."""
+    files = sorted(f for f in os.listdir(INPUT_DIR) if f.endswith(".png"))
+    if not files:
+        return jsonify({"status": "no_files"})
+
+    base, _ = os.path.splitext(files[0])
+    return jsonify({
+        "status": "ok",
+        "spectrogram": f"/api/files/input/{files[0]}",
+        "audio": f"/api/files/input/{base}.wav",
+        "filename": files[0]
+    })
+
+
+@app.route("/next_classify_file")
+def next_classify_file():
+    """Return the next file available for classification."""
+    files = sorted(f for f in os.listdir(UNCLASSIFIED_DIR) if f.endswith(".png"))
+    if not files:
+        return jsonify({"status": "no_files"})
+
+    base, _ = os.path.splitext(files[0])
+    return jsonify({
+        "status": "ok",
+        "spectrogram": f"/api/files/classify/{files[0]}",
+        "audio": f"/api/files/classify/{base}.wav",
+        "filename": files[0],
+        "tags": AVAILABLE_TAGS
+    })
+
+
+@app.route("/next_samples_file")
+def next_samples_file():
+    """Return the next file available for classification."""
+    files = sorted(f for f in os.listdir(SAMPLES_DIR) if f.endswith(".png"))
+    if not files:
+        return jsonify({"status": "no_files"})
+
+    return jsonify({
+        "status": "ok",
+        "files": files
+    })
 
 
 @app.route("/files/input/<filename>")
 def serve_input_file(filename):
     # Validate / sanitize 'filename' to prevent security issues
     file_path = os.path.join(INPUT_DIR, filename)
+    logger.info(f"accessing file: {file_path}")
     return send_file(file_path)
 
 
 @app.route("/files/classify/<filename>")
 def serve_classify_file(filename):
     # Validate / sanitize 'filename' to prevent security issues
-    file_path = os.path.join(READY_FOR_CLASSIFICATION_DIR, filename)
+    file_path = os.path.join(UNCLASSIFIED_DIR, filename)
+    logger.info(f"accessing file: {file_path}")
     return send_file(file_path)
 
 
@@ -56,7 +140,6 @@ def shutdown():
         return "Shutting Down...", 200
     except Exception as e:
         return f"Error: {str(e)}", 500
-
 
 
 @app.route("/filter", methods=["GET"])
@@ -99,90 +182,96 @@ def capture():
     )
 
 
-@app.route("/")
-def classify():
-    files = sorted([f for f in os.listdir(READY_FOR_CLASSIFICATION_DIR) if f.lower().endswith(".png")])
-    return render_template(
-        "index.html",
-        active_tab="classify",
-        filename=files[0] if files else None,
-        audiofile=f"{os.path.splitext(files[0])[0]}.wav" if files else None,
-        classify_files=files,
-        tags=AVAILABLE_TAGS
-    )
+@app.route("/filter", methods=["POST"])
+def do_filter():
+    """Process accepted/rejected files from filtering view."""
+    data = request.json
+    filename = data.get("filename")
+    status = data.get("status")
 
-@app.route("/system")
-def system():
-    return render_template("index.html", active_tab="system")
+    if not filename or not status:
+        return jsonify({"status": "error", "message": "Invalid input"}), 400
+
+    base, _ = os.path.splitext(filename)
+    for ext in ["png", "npy", "wav"]:
+        file_path = os.path.join(INPUT_DIR, f"{base}.{ext}")
+        if os.path.exists(file_path):
+            if status == "accept":
+                shutil.move(file_path, os.path.join(UNCLASSIFIED_DIR, f"{base}.{ext}"))
+            else:
+                os.remove(file_path)
+
+    return jsonify({"status": "ok", "message": "File filtered", "nextFileUrl": "/next_capture_file"})
+
 
 @app.route("/classify", methods=["POST"])
 def do_classify():
-    """Handles the form submission to classify a file, moves and renames the file"""
+    """Process classification results and move file to training data."""
+    logger.info("doing classify")
+    data = request.json
+    logger.info(f"Do classify: {data}")
+    filename = data.get("filename")
+    status = data.get("status")
+    tags = data.get("tags", [])
 
-    selected_status = request.form.get("status")
-    selected_tags = request.form.getlist("tags")
-    original_file = request.form.get("filename")
+    if not filename or not status or not tags:
+        return jsonify({"status": "error", "message": "Invalid input"}), 400
 
-    if not original_file or not selected_status or not selected_tags:
-        return redirect(url_for("index"))
+    base, _ = os.path.splitext(filename)
+    tag_prefix = "_".join(tags)
+    new_filename = f"{status}_{tag_prefix}_{base}"
 
-    logger.info(f"Classify {original_file} as {selected_status} with tags: {selected_tags}")
-
-    base, _ = os.path.splitext(original_file)
-
-    if selected_tags:
-        tag_prefix = "_".join(selected_tags)
-        new_filename = f"{selected_status}_{tag_prefix}_{base}"
-
-        for ext in "png", "npy", "wav":
-            # Full paths to move from / to
-            source_file = f"{base}.{ext}"
-            dest_file = f"{new_filename}.{ext}"
-
-            old_path = os.path.join(READY_FOR_CLASSIFICATION_DIR, source_file)
-            new_path = os.path.join(READY_FOR_TRAINING_DIR, dest_file)
-
-            # Move (rename) the file from INPUT_DIR to OUTPUT_DIR
+    for ext in ["png", "npy", "wav"]:
+        old_path = os.path.join(UNCLASSIFIED_DIR, f"{base}.{ext}")
+        new_path = os.path.join(SAMPLES_DIR, f"{new_filename}.{ext}")
+        if os.path.exists(old_path):
             shutil.move(old_path, new_path)
 
-    return redirect(url_for("classify"))
+    return jsonify({"status": "ok", "message": "File classified", "nextFileUrl": "/next_classify_file"})
+
+
+@app.route("/samples/delete/<filename>", methods=["POST"])
+def delete_sample(filename):
+    """delete sample."""
+    logger.info(f"deleting sample: {filename}")
+
+    if not filename:
+        return jsonify({"status": "error", "message": "Invalid input"}), 400
+
+    base, _ = os.path.splitext(filename)
+    for ext in ["png", "npy", "wav"]:
+        os.remove(os.path.join(SAMPLES_DIR, f"{base}.{ext}"))
+
+    return jsonify({"status": "ok", "message": f"File deleted: {filename}"})
 
 
 
-@app.route("/filter", methods=["POST"])
-def do_filter():
-    """Handles the form submission to classify a file, moves and renames the file"""
+@app.route("/samples/reclassify/<filename>", methods=["POST"])
+def reclassify_sample(filename):
+    """Move a classified sample back to the unclassified directory for reclassification."""
+    logger.info(f"Reclassifying sample: {filename}")
 
-    selected_status = request.form.get("status")
-    original_file = request.form.get("filename")
+    if not filename:
+        return jsonify({"status": "error", "message": "Invalid input"}), 400
 
-    if not original_file or not selected_status:
-        return redirect(url_for("filter"))
+    base, _ = os.path.splitext(filename)
 
-    logger.info(f"Classify {original_file} as {selected_status}")
+    # Extract the original file ID (everything after the last underscore)
+    parts = base.split("_")
+    if len(parts) < 2:
+        return jsonify({"status": "error", "message": "Invalid filename format"}), 400
 
-    base, _ = os.path.splitext(original_file)
+    new_filename = parts[-1]  # The last part is the original unique file ID
 
-    if selected_status:
-        new_filename = f"{base}"
+    for ext in ["png", "npy", "wav"]:
+        old_path = os.path.join(SAMPLES_DIR, f"{base}.{ext}")
+        new_path = os.path.join(UNCLASSIFIED_DIR, f"{new_filename}.{ext}")
+        if os.path.exists(old_path):
+            shutil.move(old_path, new_path)
 
-        for ext in "png", "npy", "wav":
-            # Full paths to move from / to
-            source_file = f"{base}.{ext}"
-            dest_file = f"{new_filename}.{ext}"
+    return jsonify({"status": "ok", "message": f"File moved back for reclassification: {new_filename}"})
 
-            old_path = os.path.join(INPUT_DIR, source_file)
-            new_path = os.path.join(READY_FOR_CLASSIFICATION_DIR, dest_file)
 
-            # Move (rename) the file from INPUT_DIR to OUTPUT_DIR
-            if selected_status == "accept":
-                logger.info(f"Moving {old_path} to {new_path}")
-                shutil.move(old_path, new_path)
-            else:
-                logger.info(f"Deleting: {old_path}")
-                os.remove(old_path)
-
-    return redirect(url_for("capture"))
 
 
 

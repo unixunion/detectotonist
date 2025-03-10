@@ -45,7 +45,7 @@
         }
 
         recognition = new webkitSpeechRecognition();
-        recognition.continuous = true;  // Keep listening indefinitely
+        recognition.continuous = true;
         recognition.interimResults = false;
         recognition.lang = 'en-US';
 
@@ -66,23 +66,99 @@
 
         recognition.onerror = function(event) {
             console.error("Speech recognition error:", event);
-            recognition.stop();
-            setTimeout(startVoiceRecognition, 1000); // Restart after a delay if stopped
+            setTimeout(startVoiceRecognition, 1000);
         };
 
         recognition.onend = function() {
             console.log("Speech recognition ended, restarting...");
-            setTimeout(startVoiceRecognition, 1000); // Restart after a delay
+            setTimeout(startVoiceRecognition, 1000);
         };
 
         recognition.start();
     }
 
     document.addEventListener("DOMContentLoaded", function() {
-        startVoiceRecognition();  // Automatically start listening when the page loads
+        startVoiceRecognition();
     });
 
   </script>
+
+  <script>
+    function checkForNewFiles(view) {
+    let url = view === "capture" ? "/next_capture_file" : "/next_classify_file";
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "ok") {
+                updateFileView(view, data.filename, data.audiofile);
+            }
+        })
+        .catch(error => console.error("Error checking files:", error));
+    }
+
+    function updateFileView(view, filename, audiofile) {
+        let imgElement = document.querySelector(`#${view} .spectrogram-image`);
+        let audioElement = document.querySelector(`#${view} .audio-source`);
+
+        if (imgElement && audioElement) {
+            imgElement.src = `/files/${view === "capture" ? "input" : "classify"}/${filename}`;
+            audioElement.src = `/files/${view === "capture" ? "input" : "classify"}/${audiofile}`;
+            audioElement.load();
+        }
+    }
+
+    // Automatically check for new files in the active tab every 5s
+    setInterval(() => {
+        let activeTab = document.querySelector(".tab-link.is-active").getAttribute("data-tab");
+        checkForNewFiles(activeTab);
+    }, 5000);
+  </script>
+
+  <script>
+    function submitClassification(form) {
+        event.preventDefault(); // Prevent full page reload
+
+        let formData = new FormData(form);
+        fetch(form.action, {
+            method: "POST",
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "ok") {
+                checkForNewFiles(document.querySelector(".tab-link.is-active").getAttribute("data-tab"));
+            } else {
+                alert("Error: " + data.message);
+            }
+        })
+        .catch(error => console.error("Error submitting classification:", error));
+    }
+
+    function submitFiltering(formElement) {
+        let formData = new FormData(formElement);
+
+        fetch(formElement.action, {
+            method: "POST",
+            body: formData
+        })
+        .then(response => response.json()) // Expect JSON response
+        .then(data => {
+            if (data.status === "ok") {
+                console.log("Filtering successful:", data.message);
+                // Fetch the next available file dynamically
+                checkForNewFiles("capture");
+            } else {
+                alert("Error: " + data.message);
+            }
+        })
+        .catch(error => console.error("Error submitting filtering:", error));
+
+        return false; // ✅ Prevents form redirection
+    }
+
+</script>
+
 
 </head>
 <body>
@@ -113,50 +189,47 @@
             <div class="card">
               <div class="card-image" style="text-align: center; padding: 1rem;">
                 <figure class="image is-256x256" style="margin: 0 auto;">
-                  <img src="{{ url_for('serve_input_file', filename=filename) }}" alt="Spectrogram" style="max-height: 256px;">
+                  <img id="capture-image" class="spectrogram-image"
+                         src="{{ url_for('serve_input_file', filename=filename) }}"
+                         alt="Spectrogram"
+                         style="max-height: 256px;">
                 </figure>
               </div>
 
               <div class="card-content">
                 <p><strong>Audio Preview:</strong></p>
                 <audio controls>
-                  <source src="{{ url_for('serve_input_file', filename=audiofile) }}" type="audio/wav">
+                  <source id="capture-audio" class="audio-source"
+                            src="{{ url_for('serve_input_file', filename=audiofile) }}"
+                            type="audio/wav">
                   Your browser does not support the audio element.
                 </audio>
               </div>
 
               <div class="card-content">
-                <form action="{{ url_for('do_filter') }}" method="POST" id="capture-form">
+                <form action="{{ url_for('do_filter') }}" method="POST" onsubmit="return submitFiltering(this);" id="capture-form">
                   <input type="hidden" name="filename" value="{{ filename }}">
                   <div class="field is-grouped">
-                    <div class="control">
-                      <label class="radio-toggle">
-                        <input type="radio" name="status" value="accept" id="capture-accept">
-                        <span class="radio-button accept">Accept</span>
-                      </label>
-                    </div>
-                    <div class="control">
-                      <label class="radio-toggle">
-                        <input type="radio" name="status" value="reject" id="capture-reject">
-                        <span class="radio-button reject">Reject</span>
-                      </label>
-                    </div>
+                      <div class="control">
+                          <label class="radio-toggle">
+                              <input type="radio" name="status" value="accept" id="capture-accept">
+                              <span class="radio-button accept">Accept</span>
+                          </label>
+                      </div>
+                      <div class="control">
+                          <label class="radio-toggle">
+                              <input type="radio" name="status" value="reject" id="capture-reject">
+                              <span class="radio-button reject">Reject</span>
+                          </label>
+                      </div>
                   </div>
-
                   <div class="field">
-                    <div class="control">
-                      <button class="button is-primary is-fullwidth" type="submit">Filter</button>
-                    </div>
+                      <div class="control">
+                          <button class="button is-primary is-fullwidth" type="submit">Apply</button>
+                      </div>
                   </div>
                 </form>
-                 <!-- Voice Command Button -->
-                  <div class="field">
-                    <div class="control">
-                      <button class="button is-info is-fullwidth" onclick="startVoiceRecognition()">
-                        🎤 Use Voice Command (Accept / Reject)
-                      </button>
-                    </div>
-                  </div>
+
               </div>
 
             </div>
@@ -183,40 +256,38 @@
               </div>
 
               <div class="card-content">
-                <form action="{{ url_for('do_classify') }}" method="POST">
-                  <input type="hidden" name="filename" value="{{ filename }}">
-                  <div class="field is-grouped">
+                <form action="{{ url_for('do_classify') }}" method="POST" onsubmit="submitClassification(this)">
+                <input type="hidden" name="filename" value="{{ filename }}">
+                <div class="field is-grouped">
                     <div class="control">
-                      <label class="radio-toggle">
-                        <input type="radio" name="status" value="accept">
-                        <span class="radio-button accept">Accept</span>
-                      </label>
-                    </div>
-                    <div class="control">
-                      <label class="radio-toggle">
-                        <input type="radio" name="status" value="reject">
-                        <span class="radio-button reject">Reject</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div class="field is-grouped is-grouped-multiline">
-                    {% for tag in tags %}
-                      <div class="control">
-                        <label class="checkbox tag-toggle">
-                          <input type="checkbox" name="tags" value="{{ tag }}">
-                          <span class="tag-button">{{ tag }}</span>
+                        <label class="radio-toggle">
+                            <input type="radio" name="status" value="accept">
+                            <span class="radio-button accept">Accept</span>
                         </label>
-                      </div>
-                    {% endfor %}
-                  </div>
-
-                  <div class="field">
-                    <div class="control">
-                      <button class="button is-primary is-fullwidth" type="submit">Classify</button>
                     </div>
-                  </div>
-                </form>
+                    <div class="control">
+                        <label class="radio-toggle">
+                            <input type="radio" name="status" value="reject">
+                            <span class="radio-button reject">Reject</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="field is-grouped is-grouped-multiline">
+                    {% for tag in tags %}
+                    <div class="control">
+                        <label class="checkbox tag-toggle">
+                            <input type="checkbox" name="tags" value="{{ tag }}">
+                            <span class="tag-button">{{ tag }}</span>
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="field">
+                    <div class="control">
+                        <button class="button is-primary is-fullwidth" type="submit">Classify</button>
+                    </div>
+                </div>
+            </form>
               </div>
             </div>
           {% else %}
