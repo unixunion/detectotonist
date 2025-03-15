@@ -1,7 +1,0 @@
-{
-  "name": "my-app",
-  "version": "1.0.0",
-  "scripts": {
-    "dev": "python labeler.py"
-  }
-}

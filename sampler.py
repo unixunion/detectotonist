@@ -78,31 +78,6 @@ class AudioClassifierApp:
         plt.savefig(f"{INPUT_DIR}/{filename}.png")
         plt.close()
 
-    # def save_mel_spectrogram_trimmed(self, audio_sample, filename=None):
-    #
-    #     y = np.array(audio_sample)
-    #
-    #     # Trim leading and trailing silence
-    #     # top_db=30 is a typical threshold; you can adjust as needed
-    #     trimmed_audio, index = librosa.effects.trim(y, top_db=60)
-    #
-    #     # Compute Mel-spectrogram on the trimmed audio
-    #     S = librosa.feature.melspectrogram(y=trimmed_audio, sr=self.SAMPLE_RATE)
-    #     S_db = librosa.power_to_db(S, ref=np.max)
-    #
-    #     plt.figure(figsize=(10, 4))
-    #     librosa.display.specshow(S_db, sr=self.SAMPLE_RATE)
-    #     plt.savefig(f"{INPUT_DIR}/melt_{filename}.png")
-    #     plt.close()
-    #
-    # def save_waveform(self, audio_sample, filename=None):
-    #     plt.figure(figsize=(10, 3))
-    #     librosa.display.waveshow(np.array(audio_sample), sr=self.SAMPLE_RATE)
-    #     # plt.title("Waveform")  # optional
-    #     save_path = f"{INPUT_DIR}/waveform_{filename}.png"
-    #     plt.savefig(save_path)
-    #     plt.close()
-    #     print(f"Saved {save_path}")
 
     def save_wav(self, audio_sample, filename=None):
         """

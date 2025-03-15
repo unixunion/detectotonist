@@ -61,7 +61,6 @@ def add_tag(tag):
         pickle.dump(AVAILABLE_TAGS, f)
     return jsonify({"status": "ok", "tags": AVAILABLE_TAGS})
 
-
 @app.route("/tags/del/<tag>", methods=["POST"])
 def del_tag(tag):
     if tag in AVAILABLE_TAGS:
@@ -69,6 +68,7 @@ def del_tag(tag):
         with open("tags.pkl", 'wb') as f:
             pickle.dump(AVAILABLE_TAGS, f)
     return jsonify({"status": "ok", "tags": AVAILABLE_TAGS})
+
 
 
 @app.route("/next_filter_file")
@@ -104,9 +104,9 @@ def next_classify_file():
     })
 
 
-@app.route("/next_samples_file")
-def next_samples_file():
-    """Return the next file available for classification."""
+@app.route("/samples")
+def samples():
+    """Return all the sample files."""
     files = sorted(f for f in os.listdir(SAMPLES_DIR) if f.endswith(".png"))
     if not files:
         return jsonify({"status": "no_files"})
@@ -129,6 +129,13 @@ def serve_input_file(filename):
 def serve_classify_file(filename):
     # Validate / sanitize 'filename' to prevent security issues
     file_path = os.path.join(UNCLASSIFIED_DIR, filename)
+    logger.info(f"accessing file: {file_path}")
+    return send_file(file_path)
+
+@app.route("/files/samples/<filename>")
+def serve_samples_file(filename):
+    # Validate / sanitize 'filename' to prevent security issues
+    file_path = os.path.join(SAMPLES_DIR, filename)
     logger.info(f"accessing file: {file_path}")
     return send_file(file_path)
 
