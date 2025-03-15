@@ -3,15 +3,19 @@ import os.path
 import pickle
 import shutil
 import subprocess
-import time
+import threading
 
 from flask import Flask, render_template, request, send_file, jsonify
 from loguru import logger
 
-from sampler import INPUT_DIR
+from sampler import AudioClassifierApp
 
+INPUT_DIR = os.path.join("data", "input")
 UNCLASSIFIED_DIR = os.path.join("data", "unclassified")
 SAMPLES_DIR = os.path.join("data", "samples")
+# API_PREFIX="/api" # when testing, this should be just "" since dont have a rewrite rule yet
+API_PREFIX="" # when testing, this should be just "" since dont have a rewrite rule yet
+LATEST_X_FILES=8
 
 DEFAULT_TAGS = [
     # Object Types
@@ -47,12 +51,46 @@ except Exception as e:
 
 app = Flask(__name__)
 
+sampler = AudioClassifierApp()
 
-@app.route("/tags", methods=["GET"])
+def run_sampler():
+    """Runs the sampler in a separate thread."""
+    sampler.run()
+
+# Start sampler in a separate thread when the script starts
+sampler_thread = threading.Thread(target=run_sampler, daemon=True)
+sampler_thread.start()
+
+@app.route(f"{API_PREFIX}/sampler/toggle", methods=["POST"])
+def toggle_sampling():
+    """Toggle audio sampling without stopping the app."""
+    data = request.json
+    state = data.get("active")
+
+    if state is None or not isinstance(state, bool):
+        return jsonify({"status": "error", "message": "Invalid request"}), 400
+
+    sampler.sampling_active = state
+    logger.info(f"Sampling {'activated' if state else 'paused'}.")
+
+    return jsonify({"status": "ok", "message": f"Sampling {'activated' if state else 'paused'}"})
+
+
+@app.route(f"{API_PREFIX}/sampler/status", methods=["GET"])
+def sampler_status():
+    global sampler_thread
+    """Check if sampler is running and if sampling is active."""
+    return jsonify({
+        "status": "running" if sampler_thread and sampler_thread.is_alive() else "stopped",
+        "sampling_active": sampler.sampling_active
+    })
+
+
+@app.route(f"{API_PREFIX}/tags", methods=["GET"])
 def get_tags():
     return jsonify({"status": "ok", "tags": AVAILABLE_TAGS})
 
-@app.route("/tags/add/<tag>", methods=["POST"])
+@app.route(f"{API_PREFIX}/tags/add/<tag>", methods=["POST"])
 def add_tag(tag):
     if tag in AVAILABLE_TAGS:
         AVAILABLE_TAGS.remove(tag)
@@ -61,7 +99,7 @@ def add_tag(tag):
         pickle.dump(AVAILABLE_TAGS, f)
     return jsonify({"status": "ok", "tags": AVAILABLE_TAGS})
 
-@app.route("/tags/del/<tag>", methods=["POST"])
+@app.route(f"{API_PREFIX}/tags/del/<tag>", methods=["POST"])
 def del_tag(tag):
     if tag in AVAILABLE_TAGS:
         AVAILABLE_TAGS.remove(tag)
@@ -71,7 +109,7 @@ def del_tag(tag):
 
 
 
-@app.route("/next_filter_file")
+@app.route(f"{API_PREFIX}/next_filter_file")
 def next_filter_file():
     """Return the next file available for filtering."""
     files = sorted(f for f in os.listdir(INPUT_DIR) if f.endswith(".png"))
@@ -81,13 +119,13 @@ def next_filter_file():
     base, _ = os.path.splitext(files[0])
     return jsonify({
         "status": "ok",
-        "spectrogram": f"/api/files/input/{files[0]}",
+        "spectrogram": f"/api/files/input/{base}.png",
         "audio": f"/api/files/input/{base}.wav",
         "filename": files[0]
     })
 
 
-@app.route("/next_classify_file")
+@app.route(f"{API_PREFIX}/next_classify_file")
 def next_classify_file():
     """Return the next file available for classification."""
     files = sorted(f for f in os.listdir(UNCLASSIFIED_DIR) if f.endswith(".png"))
@@ -104,10 +142,16 @@ def next_classify_file():
     })
 
 
-@app.route("/samples")
+@app.route(f"{API_PREFIX}/samples")
 def samples():
     """Return all the sample files."""
-    files = sorted(f for f in os.listdir(SAMPLES_DIR) if f.endswith(".png"))
+    # List all .png files and sort them by modified time (latest first)
+    files = sorted(
+        (f for f in os.listdir(SAMPLES_DIR) if f.endswith(".png")),
+        key=lambda f: os.path.getmtime(os.path.join(SAMPLES_DIR, f)),
+        reverse=True  # Latest files first
+    )[:LATEST_X_FILES]  # Get only the latest X files
+
     if not files:
         return jsonify({"status": "no_files"})
 
@@ -117,7 +161,7 @@ def samples():
     })
 
 
-@app.route("/files/input/<filename>")
+@app.route(f"{API_PREFIX}/files/input/<filename>")
 def serve_input_file(filename):
     # Validate / sanitize 'filename' to prevent security issues
     file_path = os.path.join(INPUT_DIR, filename)
@@ -125,14 +169,14 @@ def serve_input_file(filename):
     return send_file(file_path)
 
 
-@app.route("/files/classify/<filename>")
+@app.route(f"{API_PREFIX}/files/classify/<filename>")
 def serve_classify_file(filename):
     # Validate / sanitize 'filename' to prevent security issues
     file_path = os.path.join(UNCLASSIFIED_DIR, filename)
     logger.info(f"accessing file: {file_path}")
     return send_file(file_path)
 
-@app.route("/files/samples/<filename>")
+@app.route(f"{API_PREFIX}/files/samples/<filename>")
 def serve_samples_file(filename):
     # Validate / sanitize 'filename' to prevent security issues
     file_path = os.path.join(SAMPLES_DIR, filename)
@@ -140,7 +184,7 @@ def serve_samples_file(filename):
     return send_file(file_path)
 
 
-@app.route("/shutdown", methods=["POST"])
+@app.route(f"{API_PREFIX}/shutdown", methods=["POST"])
 def shutdown():
     try:
         subprocess.Popen(["sudo", "/sbin/shutdown", "-h", "now"])
@@ -149,47 +193,12 @@ def shutdown():
         return f"Error: {str(e)}", 500
 
 
-@app.route("/filter", methods=["GET"])
-def filter():
-    """
-    Displays samples in the first input / capture stage, where we decide which samples to keep
-    or discard for later classifying
-    """
-    files = sorted([f for f in os.listdir(INPUT_DIR) if f.lower().endswith(".png")])
-    if not files:
-        return """
-            <h1 style='margin: 20px;'>No files left to classify: %s</h1>
-            <script>
-                setTimeout(function() {
-                    location.reload();
-                }, 5000);
-            </script>
-            <form action="/shutdown" method="post">
-                <button type="submit">
-                Shutdown
-                </button>
-            </form>
-            """ % time.time()
-
-    audio_file, _ = os.path.splitext(files[0])
-
-    return render_template("index.html", filename=files[0], tags=AVAILABLE_TAGS, audiofile=f"{audio_file}.wav")
+@app.route("/", methods=["GET"])
+def index():
+    return render_template("index.html")
 
 
-# **Capture Data View**
-@app.route("/capture")
-def capture():
-    files = sorted([f for f in os.listdir(INPUT_DIR) if f.lower().endswith(".png")])
-    return render_template(
-        "index.html",
-        active_tab="capture",
-        filename=files[0] if files else None,
-        audiofile=f"{os.path.splitext(files[0])[0]}.wav" if files else None,
-        capture_files=files
-    )
-
-
-@app.route("/filter", methods=["POST"])
+@app.route(f"{API_PREFIX}/filter", methods=["POST"])
 def do_filter():
     """Process accepted/rejected files from filtering view."""
     data = request.json
@@ -211,7 +220,7 @@ def do_filter():
     return jsonify({"status": "ok", "message": "File filtered", "nextFileUrl": "/next_capture_file"})
 
 
-@app.route("/classify", methods=["POST"])
+@app.route(f"{API_PREFIX}/classify", methods=["POST"])
 def do_classify():
     """Process classification results and move file to training data."""
     logger.info("doing classify")
@@ -237,7 +246,7 @@ def do_classify():
     return jsonify({"status": "ok", "message": "File classified", "nextFileUrl": "/next_classify_file"})
 
 
-@app.route("/samples/delete/<filename>", methods=["POST"])
+@app.route(f"{API_PREFIX}/samples/delete/<filename>", methods=["POST"])
 def delete_sample(filename):
     """delete sample."""
     logger.info(f"deleting sample: {filename}")
@@ -253,7 +262,7 @@ def delete_sample(filename):
 
 
 
-@app.route("/samples/reclassify/<filename>", methods=["POST"])
+@app.route(f"{API_PREFIX}/samples/reclassify/<filename>", methods=["POST"])
 def reclassify_sample(filename):
     """Move a classified sample back to the unclassified directory for reclassification."""
     logger.info(f"Reclassifying sample: {filename}")
@@ -279,8 +288,5 @@ def reclassify_sample(filename):
     return jsonify({"status": "ok", "message": f"File moved back for reclassification: {new_filename}"})
 
 
-
-
-
 if __name__ == '__main__':
-    app.run(debug=True, port=8080, host='0.0.0.0')
+    app.run(debug=True, use_reloader=False, port=8080, host='0.0.0.0')

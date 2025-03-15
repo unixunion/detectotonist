@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import {onMounted, ref} from "vue";
+import {onMounted, ref, nextTick} from "vue";
 
 // Filter Data State
 const filterData = ref<any>(null);
+const samplingActive = ref<boolean>(false);
+const audioPlayer = ref<HTMLAudioElement | null>(null);
 
 // Fetch Filter Data
 const fetchFilterData = async () => {
@@ -10,6 +12,16 @@ const fetchFilterData = async () => {
     const res = await fetch('/api/next_filter_file');
     filterData.value = await res.json();
     console.log("Fetched filter data:", filterData.value);
+
+    // Wait for Vue to update the DOM, then reload audio
+    // await nextTick();
+
+    // Force audio to reload
+    // if (audioPlayer.value) {
+    //   audioPlayer.value.pause();
+    //   audioPlayer.value.currentTime = 0;
+    //   audioPlayer.value.load();  // Reload the audio file
+    // }
   } catch (error) {
     console.error("Error fetching filter data:", error);
   }
@@ -36,13 +48,50 @@ const handleFilter = async (status: "accept" | "reject") => {
   }
 };
 
+
+// Fetch current sampler status
+const fetchSamplerStatus = async () => {
+  try {
+    const res = await fetch("/api/sampler/status");
+    const data = await res.json();
+    samplingActive.value = data.sampling_active;
+    console.log("Sampler Status:", data);
+  } catch (error) {
+    console.error("Error fetching sampler status:", error);
+  }
+};
+
+// Toggle Sampling ON/OFF
+const toggleSampler = async () => {
+  try {
+    const newState = !samplingActive.value;
+    const res = await fetch("/api/sampler/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: newState }),
+    });
+
+    const data = await res.json();
+    if (data.status === "ok") {
+      samplingActive.value = newState; // Update state
+      console.log("Sampling toggled:", newState);
+    } else {
+      console.error("Failed to toggle sampling:", data.message);
+    }
+  } catch (error) {
+    console.error("Error toggling sampling:", error);
+  }
+};
+
 // Fetch filter files when component loads
 onMounted(fetchFilterData);
 
 onMounted(() => {
   fetchFilterData();
+  fetchSamplerStatus();
   setInterval(() => {
     fetchFilterData();
+    fetchSamplerStatus();
   }, 1000);
 });
 
@@ -63,8 +112,8 @@ onMounted(() => {
       />
 
       <!-- Audio Preview -->
-      <audio controls class="w-full">
-        <source :src="filterData.audio" type="audio/wav" />
+      <audio :key="filterData.audio" ref="audioPlayer" controls class="w-full">
+        <source :src="`${filterData.audio}?t=${Date.now()}`" type="audio/wav" />
         Your browser does not support the audio element.
       </audio>
 
@@ -77,5 +126,16 @@ onMounted(() => {
 
     <!-- If filterData is missing OR it doesn't contain spectrogram/audio -->
     <p v-else class="text-center text-gray-500">No samples to filter</p>
+
+    <!-- Toggle Sampling Button -->
+<!--    <div class="flex justify-center mt-4">-->
+<!--      <button-->
+<!--        :class="samplingActive ? 'btn btn-error' : 'btn btn-success'"-->
+<!--        @click="toggleSampler"-->
+<!--      >-->
+<!--        {{ samplingActive ? "Stop Sampling" : "Start Sampling" }}-->
+<!--      </button>-->
+<!--    </div>-->
+
   </div>
 </template>

@@ -55,7 +55,9 @@ const reclassifySample = async (filename: string) => {
 
 // Fetch samples on component mount
 onMounted(() => {
-  fetchSamples();
+  setInterval(() => {
+    fetchSamples();
+  }, 1000);
 })
 
 </script>

@@ -15,12 +15,12 @@ from loguru import logger
 INPUT_DIR = os.path.join("data", "input")
 MAX_RECORDING_TIME = 2
 
-logger.info(sd.query_devices())
-
 sd.default.device = 1
 sd.default.latency = 'high'
 sd.default.dtype = 'float32'
 sd.default.samplerate = 48000
+
+logger.info(sd.query_devices())
 
 
 class AudioClassifierApp:
@@ -54,6 +54,8 @@ class AudioClassifierApp:
         self.calibrated_silence_threshold = self.SILENCE_THRESHOLD
         self.calibration_data = []
         self.recording_start_time = None
+
+        self.sampling_active = False
 
         # Register signal handler for clean exit
         signal.signal(signal.SIGINT, self.exit_handler)
@@ -118,14 +120,11 @@ class AudioClassifierApp:
         # Convert to numpy array and flatten (in case of stereo)
         audio_data = indata[:, 0]
 
-        # Append to ring buffer
-        self.ring_buffer.extend(audio_data)
-
         # Perform calibration
         if not self.calibrated and not self.calibration_start_time and not self.calibrating:
             self.calibration_start_time = round(time.time() * 1000)
             self.calibrating = True
-            self.calibration_data = []  # Reset calibration accumulation
+            self.calibration_data = []
             self.recording_start_time = time.time()
             logger.info("Starting calibration")
 
@@ -143,6 +142,12 @@ class AudioClassifierApp:
                 self.calibrating = False
             else:
                 return  # Continue calibration
+
+        if not self.sampling_active:
+            return
+
+        # Append to ring buffer
+        self.ring_buffer.extend(audio_data)
 
         # Check if audio exceeds threshold (detect noise peak)
         if not self.recording and np.max(np.abs(audio_data)) > self.calibrated_noise_threshold:

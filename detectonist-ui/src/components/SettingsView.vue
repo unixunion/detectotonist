@@ -3,6 +3,20 @@ import {useTagsStore} from "@/stores/tags.ts";
 import TagManager from "@/components/TagManager.vue";
 
 const tagsStore = useTagsStore();
+
+const handleShutdown = async () => {
+  try {
+    const res = await fetch(`/api/shutdown`, { method: "POST" });
+    const data = await res.json();
+    if (data.status === "ok") {
+      console.log("Shutdown:");
+    } else {
+      console.error("Shutdown failed failed:", data.message);
+    }
+  } catch (error) {
+    console.error("Error shutting down:", error);
+  }
+};
 </script>
 
 <template>
@@ -13,8 +27,9 @@ const tagsStore = useTagsStore();
         <TagManager/>
       </div>
     </div>
-
-    <p v-else class="text-center text-gray-500">No samples to filter</p>
+    <div class="flex justify-center gap-4 mt-4">
+        <button class="btn btn-success" @click="handleShutdown()">Shutdown</button>
+    </div>
   </div>
 </template>
 
