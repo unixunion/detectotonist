@@ -27,7 +27,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../static/assets",
+    outDir: "../static",
     emptyOutDir: true,
     rollupOptions: {
       input: {
@@ -40,17 +40,4 @@ export default defineConfig({
     },
   },
   publicDir: false,
-  buildEnd: async () => {
-    const fs = require('fs');
-    const path = require('path');
-
-    // Move index.html to ../templates after build
-    const srcPath = path.resolve(__dirname, '../static/assets/index.html');
-    const destPath = path.resolve(__dirname, '../templates/index.html');
-
-    if (fs.existsSync(srcPath)) {
-      fs.renameSync(srcPath, destPath);
-      console.log("✅ Moved index.html to ../templates/");
-    }
-  }
 })

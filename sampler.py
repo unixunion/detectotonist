@@ -73,7 +73,14 @@ class AudioClassifierApp:
     def save_mel_spectrogram(self, audio_sample, filename=None):
         audio_sample = np.array(audio_sample, dtype=np.float32)
         #audio_sample = np.array(audio_sample, dtype=np.float32) / np.iinfo(np.int16).max
-        S = librosa.feature.melspectrogram(y=np.array(audio_sample), sr=self.SAMPLE_RATE)
+        S = librosa.feature.melspectrogram(
+            y=np.array(audio_sample),
+            sr=self.SAMPLE_RATE,
+            n_fft=1024,  # Smaller FFT window for better time resolution
+            hop_length=256,  # More frequent updates for transient signals
+            n_mels=64,  # Enough resolution for material identification
+            fmax=12000  # Higher max frequency to capture harmonics of metals
+        )
         S_db = librosa.power_to_db(S, ref=np.max)
         plt.figure(figsize=(10, 4))
         librosa.display.specshow(S_db, sr=self.SAMPLE_RATE)
@@ -156,42 +163,79 @@ class AudioClassifierApp:
             logger.info(f"Noise detected: {np.max(np.abs(audio_data))}, starting capture...")
             self.rolling_silence_buffer.clear()  # Reset buffer on new recording
 
+
         # Continue recording if active
         if self.recording:
             self.captured_audio.extend(audio_data)
 
-            if self.recording_start_time and time.time() - self.recording_start_time >= MAX_RECORDING_TIME:
+            if self.recording_start_time is None:
+                self.recording_start_time = time.time()  # Ensure it's always initialized
+
+            elapsed_time = time.time() - self.recording_start_time
+
+            # Ensure minimum recording time (1 second)
+            if elapsed_time < 1.0:
+                return  # Keep recording, do not stop yet
+
+            if elapsed_time >= MAX_RECORDING_TIME:
                 logger.info("Max recording time reached, stopping capture...")
-                self.recording = False
-                self.process_audio(self.captured_audio)
-                self.captured_audio = []
-                self.silence_start_time = None
-                self.recording_start_time = None
+                self.stop_recording()
                 return
 
             frame_amplitude = np.mean(np.abs(audio_data))
             self.rolling_silence_buffer.append(frame_amplitude)
 
-            # Update rolling silence buffer
-            # self.rolling_silence_buffer.append(np.mean(audio_data))  # Use rolling mean to avoid spikes
-
-            # Check if audio returns to silence
-            if np.mean(self.rolling_silence_buffer) < self.calibrated_silence_threshold:
+            # Check if audio returns to silence (but only after min duration)
+            if elapsed_time >= 1.0 and np.mean(self.rolling_silence_buffer) < self.calibrated_silence_threshold:
                 if self.silence_start_time is None:
                     self.silence_start_time = time.time()
                     logger.info(f"Silence start detected at {self.silence_start_time:.3f}")
                 elif time.time() - self.silence_start_time >= self.SILENCE_DURATION:
                     logger.info("Silence detected, stopping capture...")
-                    self.recording = False
-                    self.process_audio(self.captured_audio)
-                    self.captured_audio = []
-                    self.silence_start_time = None
+                    self.stop_recording()
             else:
-                # **Only reset if consistently above threshold for multiple frames**
+                # Reset silence detection if noise continues
                 if len(self.rolling_silence_buffer) == self.ROLLING_WINDOW and np.mean(
                         self.rolling_silence_buffer) > self.calibrated_silence_threshold:
                     logger.debug("Resetting silence start time due to sustained noise")
-                    self.silence_start_time = None  # Reset silence timer
+                    self.silence_start_time = None
+
+        # Continue recording if active
+        # if self.recording:
+        #     self.captured_audio.extend(audio_data)
+        #
+        #     if self.recording_start_time and time.time() - self.recording_start_time >= MAX_RECORDING_TIME:
+        #         logger.info("Max recording time reached, stopping capture...")
+        #         self.recording = False
+        #         self.process_audio(self.captured_audio)
+        #         self.captured_audio = []
+        #         self.silence_start_time = None
+        #         self.recording_start_time = None
+        #         return
+        #
+        #     frame_amplitude = np.mean(np.abs(audio_data))
+        #     self.rolling_silence_buffer.append(frame_amplitude)
+        #
+        #     # Update rolling silence buffer
+        #     # self.rolling_silence_buffer.append(np.mean(audio_data))  # Use rolling mean to avoid spikes
+        #
+        #     # Check if audio returns to silence
+        #     if np.mean(self.rolling_silence_buffer) < self.calibrated_silence_threshold:
+        #         if self.silence_start_time is None:
+        #             self.silence_start_time = time.time()
+        #             logger.info(f"Silence start detected at {self.silence_start_time:.3f}")
+        #         elif time.time() - self.silence_start_time >= self.SILENCE_DURATION:
+        #             logger.info("Silence detected, stopping capture...")
+        #             self.recording = False
+        #             self.process_audio(self.captured_audio)
+        #             self.captured_audio = []
+        #             self.silence_start_time = None
+        #     else:
+        #         # **Only reset if consistently above threshold for multiple frames**
+        #         if len(self.rolling_silence_buffer) == self.ROLLING_WINDOW and np.mean(
+        #                 self.rolling_silence_buffer) > self.calibrated_silence_threshold:
+        #             logger.debug("Resetting silence start time due to sustained noise")
+        #             self.silence_start_time = None  # Reset silence timer
 
     def run(self):
         """Start the audio stream and continuously listen"""
@@ -204,6 +248,17 @@ class AudioClassifierApp:
         """Handle SIGINT (Ctrl+C) for clean exit"""
         logger.info("Exiting application...")
         sys.exit(0)
+
+    def stop_recording(self):
+        """Stops the recording and processes the captured audio"""
+        self.recording = False
+        if len(self.captured_audio) >= self.SAMPLE_RATE:  # Ensure at least 1 sec of audio
+            self.process_audio(self.captured_audio)
+        else:
+            logger.warning("Discarding short sample (less than 1 second)")
+        self.captured_audio = []
+        self.silence_start_time = None
+        self.recording_start_time = None
 
 
 if __name__ == "__main__":

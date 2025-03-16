@@ -22,12 +22,13 @@ const handleDeleteTag = async (tag: string) => {
 
 <template>
   <div>
-    <h2>Manage Tags</h2>
 
-    <input v-model="newTag" placeholder="New tag" class="input input-bordered" />
-    <button @click="handleAddTag" class="btn btn-primary">Add</button>
+    <div class="flex items-center gap-2 py-2">
+      <input v-model="newTag" placeholder="New tag" class="input input-bordered flex-1" />
+      <button @click="handleAddTag" class="btn btn-primary">Add Tag</button>
+    </div>
 
-    <div class="flex flex-wrap gap-2 mt-4">
+    <div class="flex flex-wrap gap-2 mt-4 py-2">
       <div v-for="tag in tagsStore.tags" :key="tag" class="flex items-center gap-2 border rounded p-2">
         <span>{{ tag }}</span>
         <button @click="handleDeleteTag(tag)" class="btn btn-sm btn-error">✕</button>

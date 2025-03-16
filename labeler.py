@@ -13,8 +13,8 @@ from sampler import AudioClassifierApp
 INPUT_DIR = os.path.join("data", "input")
 UNCLASSIFIED_DIR = os.path.join("data", "unclassified")
 SAMPLES_DIR = os.path.join("data", "samples")
-# API_PREFIX="/api" # when testing, this should be just "" since dont have a rewrite rule yet
-API_PREFIX="" # when testing, this should be just "" since dont have a rewrite rule yet
+API_PREFIX="/api" # when testing, this should be just "" since dont have a rewrite rule yet
+# API_PREFIX="" # when testing, this should be just "" since dont have a rewrite rule yet
 LATEST_X_FILES=8
 
 DEFAULT_TAGS = [
@@ -74,6 +74,28 @@ def toggle_sampling():
     logger.info(f"Sampling {'activated' if state else 'paused'}.")
 
     return jsonify({"status": "ok", "message": f"Sampling {'activated' if state else 'paused'}"})
+
+
+@app.route(f"{API_PREFIX}/recalibrate", methods=["POST"])
+def recalibrate():
+    """recalibrate"""
+    global sampler
+    sampler.calibrated = False
+    sampler.calibrating = False
+    sampler.calibration_start_time = None
+    sampler.calibration_data = []
+    logger.info(f"Recalibrating")
+    return jsonify({"status": "ok"})
+
+
+@app.route(f"{API_PREFIX}/calibration", methods=["GET"])
+def recalibrate():
+    """recalibrate"""
+    global sampler
+    logger.info(f"Returning calibration data")
+    return jsonify({"status": "ok", "noise_threshold": sampler.calibrated_noise_threshold, "silence_threshold": sampler.calibrated_silence_threshold})
+
+
 
 
 @app.route(f"{API_PREFIX}/sampler/status", methods=["GET"])

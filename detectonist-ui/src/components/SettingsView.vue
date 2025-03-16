@@ -11,12 +11,28 @@ const handleShutdown = async () => {
     if (data.status === "ok") {
       console.log("Shutdown:");
     } else {
-      console.error("Shutdown failed failed:", data.message);
+      console.error("Shutdown failed:", data.message);
     }
   } catch (error) {
     console.error("Error shutting down:", error);
   }
 };
+
+
+const handleRecalibrate = async () => {
+  try {
+    const res = await fetch(`/api/recalibrate`, { method: "POST" });
+    const data = await res.json();
+    if (data.status === "ok") {
+      console.log("Recalibrate:");
+    } else {
+      console.error("Recalibrate failed:", data.message);
+    }
+  } catch (error) {
+    console.error("Error recalibrating, ", error);
+  }
+};
+
 </script>
 
 <template>
@@ -27,8 +43,14 @@ const handleShutdown = async () => {
         <TagManager/>
       </div>
     </div>
+
+    <div class="border-t border-gray-300 my-6 py-2">
+      <p class="text-center text-gray-500 text-sm">System</p>
+    </div>
+
     <div class="flex justify-center gap-4 mt-4">
-        <button class="btn btn-success" @click="handleShutdown()">Shutdown</button>
+      <button class="btn btn-success" @click="handleRecalibrate()">Recalibrate</button>
+      <button class="btn btn-error" @click="handleShutdown()">Shutdown</button>
     </div>
   </div>
 </template>
