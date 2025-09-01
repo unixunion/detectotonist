@@ -2,6 +2,8 @@
 
 AI based deep analysis of signal tones as produced by metal detectors in order to identify targets using advanced analysis of audio signals as produced by multi-tonal detectors.
 
+The application listens to audio signals and offers the user voice-based accept/reject of targets, in order to refine the model.
+
 # UI Notes
 
 * run: `pnpm run dev`
